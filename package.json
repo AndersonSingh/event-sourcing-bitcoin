@@ -1,0 +1,22 @@
+{
+  "name": "cloud-bitcoin-platform",
+  "version": "1.0.0",
+  "description": "This is a Bitcoin trading platform to demonstrate event sourcing and materialized views.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "bitcoin",
+    "event",
+    "sourcing",
+    "materialized",
+    "views"
+  ],
+  "author": "Anderson Singh",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.16.1",
+    "uuid": "^3.1.0"
+  }
+}
