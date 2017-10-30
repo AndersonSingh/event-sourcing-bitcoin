@@ -1,41 +1,126 @@
 "use strict";
 
+const AddExchangeEvent = require('../events/AddExchangeEvent');
+const AddAccountEvent = require('../events/AddAccountEvent');
+const AddWalletEvent = require('../events/AddWalletEvent');
+const TransferBitcoinsEvent = require('../events/TransferBitcoinsEvent');
+
+
 class StateEventManager {
-    constructor() {
+    constructor(azure) {
+
+        this.azure = azure; 
+
+        this.tableSvc = this.azure.createTableService();
+
+        this.tableSvc.createTableIfNotExists('EventStore', function(error, result, response){
+            if(!error){
+                console.log('created EventStore table or it has already been created.');
+            }
+            else{
+                console.log(error);
+            }
+
+    });
     	this.app_state = {};
-    	this.event_store = [];
+        this.events_list = [];
     }
 
     get_app_state(){
     	return this.app_state; 
     }
 
+    get_app_events_list(){
+        return this.events_list; 
+    }
+
     wipe_app_state(){
     	this.app_state = {};
     }
 
-    get_event_store(){
-    	return this.event_store; 
+
+    append_event(row_id, event, callback){
+
+        var str_event = JSON.stringify(event);
+
+
+        var task = {
+          PartitionKey: {'_': 'event'},
+          RowKey: {'_': row_id},
+          EventData: {'_': str_event}
+        };
+
+        this.tableSvc.insertEntity('EventStore',task, function (error, result, response) {
+          if(!error){
+            console.log('pushed event to event store.');
+            if(callback) callback();
+          }
+        });
     }
 
-    append_event(event){
-    	this.event_store.push(event);
-    }
-
-    process_events(){
+    process_events(callback){
 
     	/* we will wipe the entire state and recreate it. */
     	/* maybe replace this with a snapshot implementation in the future. */
     	this.wipe_app_state();
 
-    	/* recreate state of app. */
-    	for(var i = 0; i < this.event_store.length; i++){
+        var query = new this.azure.TableQuery()
+        .where('PartitionKey eq ?', 'event');
 
-    		/* verbose logs. */
-    		console.log('Processing Event - ' + this.event_store[i].name);
+        var app_state = this.app_state; 
 
-    		this.event_store[i].process(this.app_state);
-    	}
+        this.events_list = [];
+        
+        var events_list = this.events_list; 
+
+        this.tableSvc.queryEntities('EventStore', query, null, function(error, result, response) {
+          if(!error) {
+
+            var entries = result['entries'];
+
+            entries.sort(function(x, y){
+                return x['RowKey']['_'] - y['RowKey']['_'];
+            });
+
+
+            for(var i = 0; i < entries.length; i++){
+
+                var entry = entries[i].EventData['_']; 
+
+                events_list.push(entry);
+
+
+                entry = JSON.parse(entry);
+
+                if(entry['name'] == 'AddExchangeEvent'){
+                    console.log('adding exchange');
+                    new AddExchangeEvent(entry['exchange_id'], entry['exchange_name']).process(app_state);
+                }
+                else if(entry['name'] == 'AddAccountEvent'){
+                    new AddAccountEvent(entry['exchange_id'], entry['account_id'],
+                        entry['first_name'], entry['last_name']).process(app_state);
+                }
+                else if(entry['name'] == 'AddWalletEvent'){
+                    new AddWalletEvent(
+                        entry['exchange_id'], entry['account_id'],
+                        entry['wallet_id'], entry['wallet_id'],
+                        entry['init_balance']).process(app_state);
+                }
+                else if(entry['name'] == 'TransferBitcoinsEvent'){
+                    new TransferBitcoinsEvent(
+                        entry['transfer_id'], entry['exchange_1_id'], 
+                        entry['account_1_id'], entry['wallet_1_id'],
+                        entry['exchange_2_id'], entry['account_2_id'],
+                        entry['wallet_2_id'], entry['transfer_amount']).process(app_state);
+                }
+            }
+
+            if(callback) callback();
+
+          }
+
+        });
+
     }
 }
 

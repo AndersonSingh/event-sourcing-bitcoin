@@ -2,8 +2,10 @@
 
 /* trasfer bitcoins from  user 1 to user 2. */
 class TransferBitcoinsEvent {
-    constructor(exchange_1_id, exchange_2_id, account_1_id, account_2_id, wallet_1_id, wallet_2_id, transfer_amount) {
+    constructor(transfer_id, exchange_1_id, account_1_id, wallet_1_id, exchange_2_id, account_2_id, wallet_2_id, transfer_amount) {
     	
+        this.transfer_id = transfer_id; 
+
         this.exchange_1_id = exchange_1_id;
         this.exchange_2_id = exchange_2_id;
 
@@ -19,8 +21,11 @@ class TransferBitcoinsEvent {
     }
 
     process(app_state) {
-        app_state['exchanges'][this.exchange_1_id]['accounts'][this.account_1_id]['wallets'][this.wallet_1_id]['balance'] -= this.transfer_amount;
-        app_state['exchanges'][this.exchange_2_id]['accounts'][this.account_2_id]['wallets'][this.wallet_2_id]['balance'] += this.transfer_amount;
+
+        console.log('SEnder : ' + app_state['exchanges'][this.exchange_1_id]['accounts'][this.account_1_id]['wallets'][this.wallet_1_id]['balance']);
+
+        app_state['exchanges'][this.exchange_1_id]['accounts'][this.account_1_id]['wallets'][this.wallet_1_id]['balance'] -= parseFloat(this.transfer_amount);
+        app_state['exchanges'][this.exchange_2_id]['accounts'][this.account_2_id]['wallets'][this.wallet_2_id]['balance'] += parseFloat(this.transfer_amount);
     }
 }
 

@@ -16,7 +16,9 @@
   "author": "Anderson Singh",
   "license": "ISC",
   "dependencies": {
+    "azure-storage": "^2.6.0",
     "express": "^4.16.1",
+    "socket.io": "^2.0.3",
     "uuid": "^3.1.0"
   }
 }
