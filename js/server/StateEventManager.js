@@ -7,21 +7,12 @@ const TransferBitcoinsEvent = require('../events/TransferBitcoinsEvent');
 
 
 class StateEventManager {
-    constructor(azure) {
+    constructor(azure, tableService) {
 
         this.azure = azure; 
 
-        this.tableSvc = this.azure.createTableService();
+        this.tableSvc = tableService;
 
-        this.tableSvc.createTableIfNotExists('EventStore', function(error, result, response){
-            if(!error){
-                console.log('created EventStore table or it has already been created.');
-            }
-            else{
-                console.log(error);
-            }
-
-    });
     	this.app_state = {};
         this.events_list = [];
     }
@@ -36,6 +27,7 @@ class StateEventManager {
 
     wipe_app_state(){
     	this.app_state = {};
+        this.events_list = [];
     }
 
 
@@ -93,7 +85,6 @@ class StateEventManager {
                 entry = JSON.parse(entry);
 
                 if(entry['name'] == 'AddExchangeEvent'){
-                    console.log('adding exchange');
                     new AddExchangeEvent(entry['exchange_id'], entry['exchange_name']).process(app_state);
                 }
                 else if(entry['name'] == 'AddAccountEvent'){

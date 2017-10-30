@@ -22,8 +22,6 @@ class TransferBitcoinsEvent {
 
     process(app_state) {
 
-        console.log('SEnder : ' + app_state['exchanges'][this.exchange_1_id]['accounts'][this.account_1_id]['wallets'][this.wallet_1_id]['balance']);
-
         app_state['exchanges'][this.exchange_1_id]['accounts'][this.account_1_id]['wallets'][this.wallet_1_id]['balance'] -= parseFloat(this.transfer_amount);
         app_state['exchanges'][this.exchange_2_id]['accounts'][this.account_2_id]['wallets'][this.wallet_2_id]['balance'] += parseFloat(this.transfer_amount);
     }

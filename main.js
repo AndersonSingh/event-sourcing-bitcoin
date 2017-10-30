@@ -204,6 +204,14 @@ $(document).ready(function(){
 
   });
 
+  $("#wipe_state_button").click(function(){
+    socket.emit('wipe_state_request', {});
+  }); 
+
+  $("#rebuild_state_button").click(function(){
+    socket.emit('rebuild_state_request', {});
+  });
+
 });
 
 

@@ -2,18 +2,12 @@
 
 class MaterializedViewsManager {
 
-    constructor(azure) {
+    constructor(azure, tableService) {
 
         this.azure = azure;
 
-        this.tableSvc = this.azure.createTableService();
+        this.tableSvc = tableService;
 
-        /* create table for exchange accounts summary. */
-        this.tableSvc.createTableIfNotExists('ViewsExchangeAccounts', function(error, result, response){
-          if(!error){
-            console.log('created ViewsExchangeAccounts table or it has been created already.');
-          }
-        });
     }
 
 

@@ -6,7 +6,7 @@ var path = __dirname + '/views/';
 
 
 var server = app.listen(process.env.PORT || 3000, function(){
-	console.log("Bitcoin Trading Platform is running on port 3000.\n");
+	console.log("Bitcoin Trading Platform is running.\n");
 });
 
 var io = require('socket.io').listen(server);
@@ -23,7 +23,6 @@ const TransferBitcoinsEvent = require('./js/events/TransferBitcoinsEvent');
 const StateEventManager = require('./js/server/StateEventManager');
 const MaterializedViewsManager = require('./js/server/MaterializedViewsManager');
 
-const AZURE_ACCOUNT = "comp69052017a210";
 
 
 var bodyParser = require('body-parser');
@@ -33,13 +32,46 @@ app.use(bodyParser.urlencoded({ extended: true })); // support encoded bodies
 var azure = require('azure-storage');
 var request = require('request');
 
-var manager = new StateEventManager(azure);
+var tableSvc = azure.createTableService();
 
-var materializedViewsManager = new MaterializedViewsManager(azure);
+
+var manager = new StateEventManager(azure, tableSvc);
+
+var materializedViewsManager = new MaterializedViewsManager(azure, tableSvc);
+
+/* bad design, fix later with promises.*/
+
+tableSvc.createTableIfNotExists('EventStore', function(error, result, response){
+	if(!error){
+		console.log('created EventStore table or it has already been created.');
+
+        tableSvc.createTableIfNotExists('ViewsExchangeAccounts', function(error, result, response){
+          if(!error){
+            console.log('created ViewsExchangeAccounts table or it has been created already.');
+
+            manager.process_events(function(){
+            	console.log('initial processing of events.');
+            });
+          }
+          else{
+          	console.log(error);
+          }
+        });
+	}
+	else{
+		console.log(error);
+	}
+
+});
+
 
 /* socket.io to handle eventual consistency. */
 
 io.sockets.on('connection', function (socket) {
+
+
+  var events_list = manager.get_app_events_list();
+  socket.emit('events_list', JSON.stringify(events_list));
 
   socket.on('request_exchanges', function (data) {
 
@@ -62,7 +94,6 @@ io.sockets.on('connection', function (socket) {
  	var exchange_id = data['exchange_id'];
  	var selector = data['selector'];
 
- 	console.log("TEST" + exchange_id);
 
 	var state = manager.get_app_state();
 
@@ -85,58 +116,57 @@ io.sockets.on('connection', function (socket) {
  	io.sockets.emit('request_summary_list', {});
  });
 
+ socket.on('wipe_state_request', function(data){
+
+ 	manager.wipe_app_state();
+
+
+	var state = manager.get_app_state();
+
+	var response_obj = {};
+
+	var exchanges = state['exchanges'];
+
+	for(var exchange_id in exchanges){
+		response_obj[exchange_id] = exchanges[exchange_id]['exchange_name'];
+	}
+
+    io.sockets.emit('exchanges_list', response_obj);
+
+	var events_list = manager.get_app_events_list();
+	io.sockets.emit('events_list', JSON.stringify(events_list));
+
+	io.sockets.emit('request_summary_list', {});
+
+ });
+
+ socket.on('rebuild_state_request', function(){
+
+
+	manager.process_events(function(){
+		var state = manager.get_app_state();
+
+		var events_list = manager.get_app_events_list();
+
+		var exchanges = state['exchanges'];
+
+		var response_obj = {};
+
+		for(var exchange_id in exchanges){
+			response_obj[exchange_id] = exchanges[exchange_id]['exchange_name'];
+		}
+
+		io.sockets.emit('exchanges_list', response_obj);
+
+		io.sockets.emit('events_list', JSON.stringify(events_list));
+
+		io.sockets.emit('request_summary_list', {});
+	});
+
+ });
+
 });
 
-
-// function init_server(){
-
-// 	exchange_1_id = uuidv1();
-// 	exchange_2_id = uuidv1();
-
-// 	account_1_id = uuidv1();
-// 	account_2_id = uuidv1();
-
-// 	wallet_1_id = uuidv1();
-// 	wallet_2_id = uuidv1();
-
-
-// 	// exchange_1_id = "1d";
-// 	// exchange_2_id = "2d";
-
-// 	// account_1_id = "3d";
-// 	// account_2_id = "4d";
-
-// 	// wallet_1_id = "5d";
-// 	// wallet_2_id = "6d";
-
-
-// 	var events = [
-// 		new AddExchangeEvent(exchange_1_id, 'BitBank'),
-// 		new AddExchangeEvent(exchange_2_id, 'BitArmy'),
-
-// 		new AddAccountEvent(exchange_1_id, account_1_id, 'Anderson', 'Singh'),
-// 		new AddAccountEvent(exchange_2_id, account_2_id, 'John', 'Doe'),
-
-// 		new AddWalletEvent(exchange_1_id, account_1_id, wallet_1_id, wallet_1_id, 	50),
-// 		new AddWalletEvent(exchange_2_id, account_2_id, wallet_2_id, wallet_2_id, 	20),
-
-// 		//new TransferBitcoinsEvent('test_id', exchange_1_id, exchange_2_id, account_1_id, account_2_id, wallet_1_id, wallet_2_id, 20)
-// 	];
-
-// 	/* place the events in the event store.  */
-
-// 	for(var i = 0; i < events.length; i++){
-// 		manager.append_event( JSON.stringify(new Date().getTime()), events[i], function(){
-// 			console.log('callback ran');
-// 		});
-// 	}
-
-// 	manager.process_events();
-
-// 	console.log(manager.get_app_state());
-// }
-
-//init_server();
 
 router.use(function (req,res,next) {
   console.log("/" + req.method);
@@ -325,7 +355,6 @@ app.post('/api/events/transfer', function(req, res){
 	var receiver_account_id = req.body.receiver_account_id; 
 	var receiver_wallet_id = req.body.receiver_wallet_id;
 
-	console.log(req.body);
 
 	var transfer_amount = req.body.transfer_amount; 
 
@@ -341,12 +370,15 @@ app.post('/api/events/transfer', function(req, res){
 		transfer_amount = ""; 
 	}
 
+	var sender_temp = 0; 
+
 	/* validation, ignore this. */
 	if(sender_exchange_id in state['exchanges']){
 
 		if(sender_account_id in state['exchanges'][sender_exchange_id]['accounts']){
 
 			if(!(sender_wallet_id in state['exchanges'][sender_exchange_id]['accounts'][sender_account_id]['wallets'])){sender_wallet_id = "";}
+			else{sender_temp = state['exchanges'][sender_exchange_id]['accounts'][sender_account_id]['wallets'][sender_wallet_id]['balance']; }
 		}
 		else{
 			sender_account_id == "";
@@ -371,7 +403,7 @@ app.post('/api/events/transfer', function(req, res){
 	}
 
 
-	if(transfer_amount && sender_exchange_id && sender_account_id && sender_wallet_id && receiver_exchange_id && receiver_account_id && receiver_wallet_id){
+	if((sender_temp >= transfer_amount) && transfer_amount && sender_exchange_id && sender_account_id && sender_wallet_id && receiver_exchange_id && receiver_account_id && receiver_wallet_id){
 
 		manager.append_event(JSON.stringify(new Date().getTime()), new TransferBitcoinsEvent(transfer_id, sender_exchange_id, sender_account_id, sender_wallet_id, receiver_exchange_id, receiver_account_id, receiver_wallet_id, transfer_amount), function(){
 
@@ -390,8 +422,6 @@ app.post('/api/events/transfer', function(req, res){
 					sender_balance += parseFloat(sender_wallets_obj[_wallet_id]['balance']);
 				}
 
-				console.log("Sender Balance: " + sender_balance);
-
 				var receiver_wallets_obj = state['exchanges'][receiver_exchange_id]['accounts'][receiver_account_id]['wallets'];
 
 				var receiver_first_name = state['exchanges'][receiver_exchange_id]['accounts'][receiver_account_id]['first_name'];
@@ -404,7 +434,6 @@ app.post('/api/events/transfer', function(req, res){
 					receiver_balance += parseFloat(receiver_wallets_obj[_wallet_id]['balance']);
 				}
 
-				console.log("Receiver Balance: " + receiver_balance);
 
 				materializedViewsManager.update_view_account_summary(sender_exchange_id, sender_account_id, sender_first_name, sender_last_name, sender_balance);
 				materializedViewsManager.update_view_account_summary(receiver_exchange_id, receiver_account_id, receiver_first_name, receiver_last_name, receiver_balance);
@@ -446,7 +475,6 @@ app.get('/api/exchanges/:exchange_id/accounts', function(req, res){
 
 	var exchange_id = req.params.exchange_id;
 
-	console.log(exchange_id);
 
 	if(exchange_id !== "null"){
 
